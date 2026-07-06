@@ -248,6 +248,89 @@ Make the server reachable on the local network.
 
 ---
 
+## Change 10 — Enable chunk claiming + ranks (master switches) ✅ Applied
+
+The in-game `/claim` command was rejected with a **"chunk claiming is disabled"**
+server message. Root cause: the master on/off switches were off, which made the per-rank
+limits raised in Changes 2 and 3 inert.
+
+**10a. Enable chunk claiming.**
+- **Where:** `serverutilities/serverutilities.cfg`, section `world`
+- **What:**
+  ```diff
+  -    B:chunk_claiming=false
+  +    B:chunk_claiming=true
+  ```
+- **Why:** master switch for claiming. While `false`, ServerUtilities rejects every
+  `/claim` attempt regardless of per-rank `claims.max_chunks` (Change 2). It also makes
+  `chunk_loading` inert — the config comment states *"If chunk_claiming is set to false,
+  changing this won't do anything,"* so Change 3 (active/loadable chunks) was dead too.
+
+**10b. Enable ranks.**
+- **Where:** `serverutilities/serverutilities.cfg`, section `ranks`
+- **What:**
+  ```diff
+  -    B:enabled=false
+  +    B:enabled=true
+  ```
+- **Why:** the per-rank limits from Changes 2 & 3 live in `ranks.txt` and only apply when
+  the ranks system is active. With ranks off, everyone falls back to default behavior and
+  the raised `[player]/[vip]/[admin]` caps never take effect.
+
+**Result:** `/claim` works, and the raised claim/loader caps from Changes 2 & 3 are now
+live. Requires a server restart.
+
+---
+
+## Change 11 — Forestry builder's backpack: accept decorative blocks ✅ Applied
+
+Let the **Forestry builder's (woven) backpack** pick up decorative blocks it does not accept
+by default. Started as a handful of specific blocks and grew to **all decorative blocks from
+Ztones, Chisel, and ArchitectureCraft** (plus one ProjectRed lamp).
+
+- **Where:** `config/forestry/backpacks.cfg`, section `backpacks` → `builder`, key
+  `item.stacks`
+- **What:** appended one specific stack plus **264 wildcard stacks**:
+  ```diff
+       S:item.stacks <
+       ...
+  +        ProjRed|Illumination:projectred.illumination.lamp:29
+  +        Ztones:auroraBlock:*
+  +        ...            (41 Ztones blocks)
+  +        chisel:acacia_planks:*
+  +        ...            (221 Chisel blocks)
+  +        ArchitectureCraft:shape:*
+  +        ArchitectureCraft:shapeSE:*
+        >
+  ```
+- **Why:** requested — accept all decorative blocks from these three mods.
+- **No name-glob exists.** Forestry's parser (`forestry.core.utils.Stack.parseStackString`)
+  splits each entry on `:+` and requires **exactly** `<modId>:<name>`, `<modId>:<name>:<meta>`,
+  or `<modId>:<name>:*`. The `*` is the **only** wildcard and applies **only to metadata**;
+  the name must resolve to a real registered block/item. So `chisel:*` is impossible — every
+  block is listed individually, with `:*` to cover all of its metadata variants in one line.
+- **`*` verified externally** against the GTNH Forestry source
+  ([`GTNewHorizons/ForestryMC`](https://github.com/GTNewHorizons/ForestryMC), `Stack.java`):
+  ```java
+  meta = parts[2].equals("*") ? OreDictionary.WILDCARD_VALUE
+          : NumberFormat.getIntegerInstance().parse(parts[2]).intValue();
+  ```
+  `:*` → `OreDictionary.WILDCARD_VALUE` (all metadata). Matches the shipped jar bytecode.
+- **Block list source:** the live world registry (`World/level.dat`, the persisted FML
+  `ItemData`) — the authoritative list of what is actually registered on this server. Counts:
+  Ztones 41, Chisel 221, ArchitectureCraft 2 (`shape`, `shapeSE`).
+- **Scope = decorative only** (per request). Excluded as tools/machines/items:
+  `chisel:{chisel,diamondChisel,netherStarChisel,obsidianChisel,autoChisel,upgrade,cubit,tallow,cloudinabottle}`,
+  `Ztones:{booster,minicoal,minicharcoal}`, and all ArchitectureCraft non-shape entries
+  (`sawbench`, `largePulley`, `hammer`, `sawblade`, `glowbrush`, `cladding`, `chisel`).
+- **Format note:** the earlier request wrote `modid:name/meta` (slashes); Forestry uses
+  **colons**, so all entries use `:`. The lone ProjectRed lamp keeps its specific meta `29`.
+- **Note:** Forge re-sorts these lists alphabetically when it rewrites the file, so final
+  on-disk ordering will differ after first load. A sibling `ore.dict` list (ore-dictionary
+  names) exists in the same section — unused here since we target concrete block IDs.
+
+---
+
 ## Applying changes
 
 Config changes require a **server restart** to take effect (1.7.10 Forge reads these at
