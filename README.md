@@ -3,9 +3,14 @@
 This repository tracks **what we change in the GregTech: New Horizons server config and
 why**, so every change is reviewed and recorded *before* it is applied to the live server.
 
-The live server lives at `/mnt/extra/1000/games/minecraft/server`. This repo is the
-written record of changes made to the config files under that directory
+The live server lives at `/mnt/extra/1000/games/minecraft/server2.9`
+(GTNH **2.9.0-beta-2**, live since 2026-07-11 — see the migration section below). This
+repo is the written record of changes made to the config files under that directory
 (`config/`, `serverutilities/`, start scripts, etc.).
+
+The previous 2.8.4 instance is kept intact at `/mnt/extra/1000/games/minecraft/server`
+as a fallback. It is no longer updated; its world diverged from 2.9 at migration time.
+Both instances bind port 25565 — **never run both at once**.
 
 ## How we work (change workflow)
 
@@ -25,8 +30,9 @@ Status legend: 📝 Planned · ✅ Applied · ↩️ Reverted
 
 | Item | Value |
 |------|-------|
-| Server directory | `/mnt/extra/1000/games/minecraft/server` |
-| Modpack | GregTech: New Horizons (Minecraft 1.7.10, Forge) |
+| Server directory | `/mnt/extra/1000/games/minecraft/server2.9` |
+| Fallback (old) instance | `/mnt/extra/1000/games/minecraft/server` (2.8.4, frozen) |
+| Modpack | GregTech: New Horizons **2.9.0-beta-2** (Minecraft 1.7.10, Forge) |
 | Java runtime | **Java 21 LTS** (`/usr/lib/jvm/java-21-openjdk/bin/java`) — see Change 0 |
 | Launcher | `lwjgl3ify-forgePatches.jar` via `startserver-java9.sh` |
 | Listen port | 25565 |
@@ -328,6 +334,68 @@ Ztones, Chisel, and ArchitectureCraft** (plus one ProjectRed lamp).
 - **Note:** Forge re-sorts these lists alphabetically when it rewrites the file, so final
   on-disk ordering will differ after first load. A sibling `ore.dict` list (ore-dictionary
   names) exists in the same section — unused here since we target concrete block IDs.
+
+---
+
+## Migration to 2.9.0-beta-2 (2026-07-11) ✅ Done
+
+A second instance was created at `/mnt/extra/1000/games/minecraft/server2.9` from
+`GT_New_Horizons_2.9.0-beta-2_Server_Java_17-25.zip`. The 2.8.4 instance at
+`/mnt/extra/1000/games/minecraft/server` was left untouched as a frozen fallback.
+**As of 2026-07-11, `server2.9` is the live server** — all future changes in this repo
+apply to it.
+
+Procedure followed the official wiki
+([Server_Setup#Server_Update](https://wiki.gtnewhorizons.com/wiki/Server_Setup#Server_Update),
+[Installing_and_Migrating#Updating](https://wiki.gtnewhorizons.com/wiki/Installing_and_Migrating#Updating)):
+fresh configs from the new pack, customizations re-applied by hand — **never** copy the
+old `config/` folder wholesale.
+
+**Copied from 2.8 → 2.9 (data, not configs):**
+
+- `World/` (166M, tree verified identical) — carries the gamerules from Changes 7a & 8.
+- `config/JourneyMapServer/` — preserves the map UUID (`dee19168-…`); losing it would
+  wipe every client's JourneyMap data for this server. Verified in the 2.9 boot log:
+  `[JourneyMapServer]: World ID: dee19168-e5ff-4b33-a62c-e382dd6278f0`.
+- `journeymap/`, `visualprospecting/`, `blueprints/`
+- `server.properties` (motd bumped to 2.9.0-beta-2; keeps `server-ip=0.0.0.0`,
+  `online-mode=false`, whitelist — covers Change 9), `ops.json`, `whitelist.json`,
+  `banned-*.json`, `usercache.json`, `usernamecache.json`, `server-icon.png`,
+  `eula=true`.
+- **Not copied:** `coretweaks/` (cache), `GregTech.lang` (regenerates), `logs/`.
+
+**Re-applied onto fresh 2.9 configs** (every key verified present first):
+
+| Change | File | Status |
+|--------|------|--------|
+| 0a Java 21 pin, 24G heap | `startserver-java9.sh` | ✅ |
+| 0b headless AWT | `java9args.txt` | ✅ |
+| 1 pollution off | `config/GregTech/Pollution.cfg` | ✅ |
+| 2 claim chunks 500/2500/5000 | `serverutilities/server/ranks.txt` | ✅ |
+| 3 loader chunks 2000 | `serverutilities/server/ranks.txt` | ✅ |
+| 4 explosions FALSE | `serverutilities/serverutilities.cfg` | ✅ |
+| 5 regen 200% / no low-HP slowdown | `config/HungerOverhaul/HungerOverhaul.cfg` | ✅ |
+| 6 FindIt radius 128 | `config/findit.cfg` | ✅ |
+| 7b eco creepers | `config/CodeChickenCore.cfg` | ✅ |
+| 10a/10b chunk_claiming + ranks on | `serverutilities/serverutilities.cfg` | ✅ |
+| 11 builder backpack +265 stacks | `config/forestry/backpacks.cfg` | ✅ |
+
+- Change 11 was merged, not overwritten: 2.9 ships 204 default builder entries (2.8 had
+  169); our 265 additions (41 Ztones, 221 Chisel, 2 ArchitectureCraft, 1 ProjRed lamp)
+  were added on top → 469 total.
+- Changes 7a & 8 (gamerules) needed nothing — they live in the world save.
+
+**First-boot world migration:** started once with `-Dfml.queryResult=confirm` (the wiki's
+`/fml confirm` equivalent). FML created its own backups
+(`World-20260711-165714.zip`, `World-20260711-165717.zip` in the 2.9 folder), dropped
+mappings for mods removed upstream in 2.9 (ae2stuff, BrandonsCore, MouseTweaks, Morpheus,
+neid, gasstation, …) and remapped fluids. This is the expected, documented behavior.
+**The migrated 2.9 world can no longer be opened by 2.8** — the untouched 2.8 instance
+still has its own original `World/`.
+
+**Verified:** server reached `Done (7.614s)`, bound `*:25565`, all dimensions loaded,
+clean shutdown on SIGTERM. ⚠️ Both instances use port 25565 — never run them
+simultaneously, and remember the two worlds diverge from this point.
 
 ---
 
