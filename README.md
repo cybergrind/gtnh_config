@@ -8,7 +8,7 @@ The live server lives at `/mnt/extra/1000/games/minecraft/server2.9`
 repo is the written record of changes made to the config files under that directory
 (`config/`, `serverutilities/`, start scripts, etc.).
 
-The previous 2.8.4 instance is kept intact at `/mnt/extra/1000/games/minecraft/server`
+The previous 2.8.4 instance is kept intact at `/mnt/extra/1000/games/minecraft/server2.8`
 as a fallback. It is no longer updated; its world diverged from 2.9 at migration time.
 Both instances bind port 25565 — **never run both at once**.
 
@@ -31,7 +31,7 @@ Status legend: 📝 Planned · ✅ Applied · ↩️ Reverted
 | Item | Value |
 |------|-------|
 | Server directory | `/mnt/extra/1000/games/minecraft/server2.9` |
-| Fallback (old) instance | `/mnt/extra/1000/games/minecraft/server` (2.8.4, frozen) |
+| Fallback (old) instance | `/mnt/extra/1000/games/minecraft/server2.8` (2.8.4, frozen) |
 | Modpack | GregTech: New Horizons **2.9.0-beta-2** (Minecraft 1.7.10, Forge) |
 | Java runtime | **Java 21 LTS** (`/usr/lib/jvm/java-21-openjdk/bin/java`) — see Change 0 |
 | Launcher | `lwjgl3ify-forgePatches.jar` via `startserver-java9.sh` |
@@ -341,7 +341,7 @@ Ztones, Chisel, and ArchitectureCraft** (plus one ProjectRed lamp).
 
 A second instance was created at `/mnt/extra/1000/games/minecraft/server2.9` from
 `GT_New_Horizons_2.9.0-beta-2_Server_Java_17-25.zip`. The 2.8.4 instance at
-`/mnt/extra/1000/games/minecraft/server` was left untouched as a frozen fallback.
+`/mnt/extra/1000/games/minecraft/server2.8` was left untouched as a frozen fallback.
 **As of 2026-07-11, `server2.9` is the live server** — all future changes in this repo
 apply to it.
 
@@ -396,6 +396,51 @@ still has its own original `World/`.
 **Verified:** server reached `Done (7.614s)`, bound `*:25565`, all dimensions loaded,
 clean shutdown on SIGTERM. ⚠️ Both instances use port 25565 — never run them
 simultaneously, and remember the two worlds diverge from this point.
+
+---
+
+## Migration follow-up — restore client map data (2026-07-12) ✅ Done
+
+After the move to 2.9, **JourneyMap waypoints and mapped territory were gone** in-game
+despite the server-side copies above being correct.
+
+**Root cause — the data was never on the server.** JourneyMap tiles/waypoints and the
+VisualProspecting ore-vein overlay are stored **client-side**, in the launcher instance.
+The old 2.8.4 client instance had been deleted (found intact in
+`~/.local/share/Trash/files/GT_New_Horizons_2.8.4_Java_17-25/`), and the fresh 2.9
+instance (`~/.local/share/PrismLauncher/instances/2.9.0-beta2/.minecraft/`) started
+empty. The server-side `config/JourneyMapServer/` copy *was* still essential — it keeps
+the world ID `dee19168-…` that names the client's data folder.
+
+**Where the client data lives** (all paths under the instance's `.minecraft/`):
+
+| Data | Path | Keyed by |
+|------|------|----------|
+| JM waypoints + map tiles | `journeymap/data/mp/local_dee19168~…/` | server entry name + JourneyMapServer world ID (2.8 instance used capitalized `Local_…`) |
+| VP ore-vein cache | `visualprospecting/client/<playerUUID>/World_0a12384d-…/DIM*.dat` | player UUID (`getPersistentID()`) + VP world id from `World/data/visualprospecting.dat` — both survived the migration |
+
+**What was restored** (old instance → 2.9 instance):
+
+- **58 waypoints** — copied wholesale (new instance had none).
+- **Map tiles** — `rsync --ignore-existing`: DIM0 37 restored + 19 new-session kept
+  (56 total), DIM-1 all 29, DIM7 all 40. The 16 DIM0 regions re-visited since migration
+  keep their fresh 2.9 render; pre-migration terrain inside those regions refills on
+  revisit.
+- **VP ore veins** — `DIM0.dat` needed an **NBT merge**, not a copy: on disconnect VP had
+  already saved a cache holding only the new session's finds. Both files (gzipped NBT;
+  old = legacy v2, new = v3 palette format, per GTNH VisualProspecting sources) were
+  parsed and unioned by chunk, new entries winning (fresher depletion state):
+  **490 old + 56 new → 498 veins**, plus 25 underground-fluid records. Output written in
+  v2 format (no `version` key) so VP 1.5.33 re-validates and migrates it itself on load.
+  `DIM-1.dat` / `DIM7.dat` copied as-is.
+
+**Lessons for the next update:**
+
+- A client update means a **new launcher instance** — always carry over `journeymap/`
+  and `visualprospecting/` from the old instance's `.minecraft/`.
+- Keep the old client instance as a frozen fallback (like the server) instead of
+  deleting it. **Don't empty the Trash** until the restore is confirmed in-game; better,
+  move `GT_New_Horizons_2.8.4_Java_17-25` out of the Trash to a backup location.
 
 ---
 
